@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Wine1y/RandomSoundPlayer/internal"
+	"github.com/Wine1y/RandomSoundPlayer/internal/effects"
 	"github.com/faiface/beep"
 	"github.com/faiface/beep/speaker"
 )
@@ -41,7 +42,9 @@ func loadSoundPacks() ([]internal.SoundPack, error) {
 			slog.Warn("One of the sound packs wasn't loaded", "packPath", packPath, "err", err)
 			continue
 		}
-		soundPacks = append(soundPacks, soundPack)
+		if len(soundPack.Sounds) > 0 {
+			soundPacks = append(soundPacks, soundPack)
+		}
 	}
 	return soundPacks, nil
 }
@@ -152,7 +155,13 @@ func main() {
 			if rand.Float64() < 1.00/math.Pow(DEFAULT_MULTICAST_DIVIDER, i) {
 				pack, sound, soundStreamer := getRandomSoundStreamer(soundPacks, sampleRate)
 				slog.Debug("Playing sound", "packName", pack.Name, "soundName", sound.Name, "multicast", i)
-				mixer.Add(soundStreamer)
+				//TODO: Add chance to proc an effect instead of using it every time
+				effect := effects.GetRandomEffect()
+				mixer.Add(effect(soundStreamer, beep.Format{
+					SampleRate:  sampleRate,
+					NumChannels: sound.Format.NumChannels,
+					Precision:   sound.Format.Precision,
+				}))
 
 				multicastPause := rand.Float64()*(float64(soundStreamer.Len())/float64(sampleRate)) + 0.02
 				time.Sleep(time.Duration(float64(time.Second) * multicastPause))
