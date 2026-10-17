@@ -20,6 +20,7 @@ import (
 const DEFAULT_SAMPLE_RATE = beep.SampleRate(44100)
 const DEFAULT_SOUND_INTERVAL_SECONDS = 45.00
 const DEFAULT_MULTICAST_DIVIDER = 5
+const DEFAULT_EFFECT_CHANCE = 0.15
 const SOUND_PACKS_DIR = "sound_packs"
 
 var soundCache = internal.NewSoundCache(25)
@@ -154,14 +155,20 @@ func main() {
 		for i := 0.00; ; i++ {
 			if rand.Float64() < 1.00/math.Pow(DEFAULT_MULTICAST_DIVIDER, i) {
 				pack, sound, soundStreamer := getRandomSoundStreamer(soundPacks, sampleRate)
-				slog.Debug("Playing sound", "packName", pack.Name, "soundName", sound.Name, "multicast", i)
-				//TODO: Add chance to proc an effect instead of using it every time
-				effect := effects.GetRandomEffect()
-				mixer.Add(effect(soundStreamer, beep.Format{
-					SampleRate:  sampleRate,
-					NumChannels: sound.Format.NumChannels,
-					Precision:   sound.Format.Precision,
-				}))
+				var effectName string = "none"
+				var streamer beep.Streamer = soundStreamer
+				if rand.Float64() < DEFAULT_EFFECT_CHANCE {
+					name, effect := effects.GetRandomEffect()
+					effectName = name
+					streamer = effect(soundStreamer, beep.Format{
+						SampleRate:  sampleRate,
+						NumChannels: sound.Format.NumChannels,
+						Precision:   sound.Format.Precision,
+					})
+				}
+
+				mixer.Add(streamer)
+				slog.Debug("Playing sound", "packName", pack.Name, "soundName", sound.Name, "multicast", i, "effect", effectName)
 
 				multicastPause := rand.Float64()*(float64(soundStreamer.Len())/float64(sampleRate)) + 0.02
 				time.Sleep(time.Duration(float64(time.Second) * multicastPause))

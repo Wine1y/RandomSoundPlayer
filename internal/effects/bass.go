@@ -8,15 +8,13 @@ import (
 
 type BassStreamer struct {
 	streamer beep.Streamer
-	format   beep.Format
 	alpha    float64
 	boost    float64
 }
 
-func NewBassStreamer(streamer beep.Streamer, format beep.Format, alpha float64, boost float64) BassStreamer {
+func NewBassStreamer(streamer beep.Streamer, alpha float64, boost float64) BassStreamer {
 	bass := BassStreamer{
 		streamer: streamer,
-		format:   format,
 		alpha:    alpha,
 		boost:    boost,
 	}

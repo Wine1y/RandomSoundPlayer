@@ -47,7 +47,6 @@ func (echo *EchoStreamer) Stream(samples [][2]float64) (n int, ok bool) {
 
 	for i := range wavesOldest {
 		for j := range samples {
-			//TODO: There's actually a better way to change volume than just multiplying the samples
 			samples[j][0] += wavesOldest[i][j][0] * math.Pow(0.5, float64(i+1))
 			samples[j][1] += wavesOldest[i][j][1] * math.Pow(0.5, float64(i+1))
 		}
