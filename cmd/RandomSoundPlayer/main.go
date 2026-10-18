@@ -7,26 +7,32 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/Wine1y/RandomSoundPlayer/configs"
 	"github.com/Wine1y/RandomSoundPlayer/internal"
 	"github.com/Wine1y/RandomSoundPlayer/internal/effects"
 	"github.com/faiface/beep"
 	"github.com/faiface/beep/speaker"
 )
 
-const DEFAULT_SAMPLE_RATE = beep.SampleRate(44100)
-const DEFAULT_SOUND_INTERVAL_SECONDS = 45.00
-const DEFAULT_MULTICAST_DIVIDER = 5
-const DEFAULT_EFFECT_CHANCE = 0.15
-const SOUND_PACKS_DIR = "sound_packs"
+var soundCache internal.SoundCache
 
-var soundCache = internal.NewSoundCache(25)
+func init() {
+	slog.SetDefault(slog.New(slog.NewTextHandler(
+		os.Stdout,
+		&slog.HandlerOptions{Level: configs.Config.LoggingLevel},
+	)))
+	slog.Debug("Config initialized", "config", configs.Config)
+
+	soundCache = *internal.NewSoundCache(configs.Config.SoundCacheSize)
+}
 
 func loadSoundPacks() ([]internal.SoundPack, error) {
-	packEntries, err := os.ReadDir(SOUND_PACKS_DIR)
+	packEntries, err := os.ReadDir(configs.Config.SoundPacksDir)
 	if err != nil {
 		return make([]internal.SoundPack, 0), nil
 	}
@@ -37,7 +43,10 @@ func loadSoundPacks() ([]internal.SoundPack, error) {
 			continue
 		}
 		packName := packEntry.Name()
-		packPath := filepath.Join(SOUND_PACKS_DIR, packName)
+		if slices.Contains(configs.Config.DisabledSoundPacks, packName) {
+			continue
+		}
+		packPath := filepath.Join(configs.Config.SoundPacksDir, packName)
 		soundPack, err := internal.LoadSoundPackAt(packPath)
 		if err != nil {
 			slog.Warn("One of the sound packs wasn't loaded", "packPath", packPath, "err", err)
@@ -45,6 +54,8 @@ func loadSoundPacks() ([]internal.SoundPack, error) {
 		}
 		if len(soundPack.Sounds) > 0 {
 			soundPacks = append(soundPacks, soundPack)
+		} else {
+			slog.Warn("Empty sound pack skipped", "packPath", packPath)
 		}
 	}
 	return soundPacks, nil
@@ -65,8 +76,7 @@ func getSampleRate(soundPacks []internal.SoundPack) beep.SampleRate {
 		}
 	}
 	if len(sampleRates) == 0 {
-		slog.Info("Using default sample rate", "sampleRate", DEFAULT_SAMPLE_RATE)
-		return DEFAULT_SAMPLE_RATE
+		panic("Unreachable, at least one sound should be loaded by now")
 	}
 
 	ratesList := make([]struct {
@@ -126,9 +136,6 @@ func getRandomSoundStreamer(
 }
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	slog.SetDefault(logger)
-
 	soundPacks, err := loadSoundPacks()
 	if err != nil {
 		panic(err)
@@ -138,6 +145,13 @@ func main() {
 	for i := range soundPacks {
 		totalSounds += len(soundPacks[i].Sounds)
 		packStrings = append(packStrings, fmt.Sprintf("%v (%v sounds)", soundPacks[i].Name, len(soundPacks[i].Sounds)))
+	}
+	if totalSounds == 0 {
+		slog.Error(fmt.Sprintf(
+			"At least one sound have to be loaded. Use %v directory to create sound packs and load sounds",
+			configs.Config.SoundPacksDir,
+		))
+		os.Exit(1)
 	}
 	slog.Info("Sound packs loaded",
 		"total", fmt.Sprintf("%v packs, %v sounds", len(soundPacks), totalSounds),
@@ -150,31 +164,29 @@ func main() {
 	speaker.Init(sampleRate, int(time.Second/10*time.Duration(sampleRate)/time.Second))
 	speaker.Play(&mixer)
 
-	mean, deviation := DEFAULT_SOUND_INTERVAL_SECONDS, DEFAULT_SOUND_INTERVAL_SECONDS/2.5
+	mean, deviation := configs.Config.SoundInterval, configs.Config.SoundInterval/2.5
 	for {
 		for i := 0.00; ; i++ {
-			if rand.Float64() < 1.00/math.Pow(DEFAULT_MULTICAST_DIVIDER, i) {
-				pack, sound, soundStreamer := getRandomSoundStreamer(soundPacks, sampleRate)
-				var effectName string = "none"
-				var streamer beep.Streamer = soundStreamer
-				if rand.Float64() < DEFAULT_EFFECT_CHANCE {
-					name, effect := effects.GetRandomEffect()
-					effectName = name
-					streamer = effect(soundStreamer, beep.Format{
-						SampleRate:  sampleRate,
-						NumChannels: sound.Format.NumChannels,
-						Precision:   sound.Format.Precision,
-					})
-				}
-
-				mixer.Add(streamer)
-				slog.Debug("Playing sound", "packName", pack.Name, "soundName", sound.Name, "multicast", i, "effect", effectName)
-
-				multicastPause := rand.Float64()*(float64(soundStreamer.Len())/float64(sampleRate)) + 0.02
-				time.Sleep(time.Duration(float64(time.Second) * multicastPause))
-			} else {
+			if rand.Float64() > math.Pow(configs.Config.MulticastBaseChance, i) {
 				break
 			}
+			pack, sound, soundStreamer := getRandomSoundStreamer(soundPacks, sampleRate)
+			var effectName string = "none"
+			var streamer beep.Streamer = soundStreamer
+			if rand.Float64() < configs.Config.EffectChance {
+				name, effect := effects.GetRandomEffect()
+				effectName = name
+				streamer = effect(soundStreamer, beep.Format{
+					SampleRate:  sampleRate,
+					NumChannels: sound.Format.NumChannels,
+					Precision:   sound.Format.Precision,
+				})
+			}
+			mixer.Add(internal.NewMasterVolumeStreamer(streamer, configs.Config.MasterVolume))
+			slog.Debug("Playing sound", "packName", pack.Name, "soundName", sound.Name, "multicast", i, "effect", effectName)
+
+			multicastPause := rand.Float64()*(float64(soundStreamer.Len())/float64(sampleRate)) + 0.02
+			time.Sleep(time.Duration(float64(time.Second) * multicastPause))
 		}
 		interval := time.Duration((math.Min(rand.NormFloat64(), 5)*deviation + mean) * float64(time.Second))
 		slog.Debug("Next sound in", "interval", interval)

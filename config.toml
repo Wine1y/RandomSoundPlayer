@@ -1,0 +1,57 @@
+# Any variable in this config file can be deleted and default value will be used instead.
+
+# The main volume of all sounds. Use values from 0.1 to 5, do not set big values like 50.
+# Default: 1.00
+master_volume = 1.00
+
+# An AVERAGE interval between the sounds in seconds. The real intervals will be exponentially distributed around this value.
+# Default: 45.00
+sound_interval = 45.00
+
+# The base chance to play one more sound on each iteration. Exponentially decreases with each next sounds (0.2 for 2 sounds, 0.04 for three sounds...)
+# Default: 0.20
+multicast_base_chance = 0.20
+
+# A chance to use a random effect on the sound
+# Default: 0.15
+effect_chance = 0.15
+
+# Path to a directory where all your sound packs are stored
+# Default: "sound_packs"
+sound_packs_dir = "sound_packs"
+
+# Size of the cache for decoded and resampled sounds. Lower values = less RAM usage but more disk and CPU usage.
+# Anything in 1-100 range should be fine.
+# Default: 25
+sound_cache_size = 25
+
+# Defines how much info is logged. Availabled values: DEBUG, INFO, WARN, ERROR. Defaults to DEBUG because generally you won't see the logs.
+# Default: "DEBUG"
+logging_level = "DEBUG"
+
+# A list of sound pack names that won't be loaded. Use it to disable some sound packs without manually deleting or moving files.
+# Default: []
+disabled_sound_packs = []
+
+# Defines a weight for each sound effect. Bigger weight - more chance to use this specific effect.
+# Set weight to 0 to completely disable a sound effect.
+# Default: Speedup - 25, Slowdown - 25, AutoPanning - 20, Echo - 20, Reverb - 10, Bassboost - 1 (and it's 1 for a good reason)
+[effects]
+
+[effects.Speedup]
+    weight = 25
+
+[effects.Slowdown]
+    weight = 25
+
+[effects.AutoPanning]
+    weight = 20
+
+[effects.Echo]
+    weight = 20
+
+[effects.Reverb]
+    weight = 10
+
+[effects.Bassboost]
+    weight = 1

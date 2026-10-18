@@ -4,6 +4,7 @@ import (
 	"math/rand/v2"
 	"time"
 
+	"github.com/Wine1y/RandomSoundPlayer/configs"
 	"github.com/faiface/beep"
 )
 
@@ -30,10 +31,19 @@ var Effects = []struct {
 }{
 	{Weight: 25, Name: "Speedup", Constructor: NewSpeedupEffect},
 	{Weight: 25, Name: "Slowdown", Constructor: NewSlowdownEffect},
-	{Weight: 20, Name: "Auto Panning", Constructor: NewAutoPanEffect},
+	{Weight: 20, Name: "AutoPanning", Constructor: NewAutoPanEffect},
 	{Weight: 20, Name: "Echo", Constructor: NewEchoEffect},
 	{Weight: 10, Name: "Reverb", Constructor: NewReverbEffect},
 	{Weight: 1, Name: "Bassboost", Constructor: NewBassEffect},
+}
+
+func init() {
+	for i := range Effects {
+		configEffectEntry, exists := configs.Config.EffectWeights[Effects[i].Name]
+		if exists {
+			Effects[i].Weight = configEffectEntry.Weight
+		}
+	}
 }
 
 func NewEchoEffect(streamer beep.Streamer, format beep.Format) beep.Streamer {

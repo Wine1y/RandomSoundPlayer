@@ -2,7 +2,10 @@ module github.com/Wine1y/RandomSoundPlayer
 
 go 1.24.2
 
-require github.com/faiface/beep v1.1.0 // direct
+require (
+    github.com/faiface/beep v1.1.0 // direct
+    github.com/BurntSushi/toml v1.6.0 // direct
+)
 
 require (
 	github.com/hajimehoshi/go-mp3 v0.3.0 // indirect
