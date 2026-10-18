@@ -12,11 +12,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wine1y/RandomSoundPlayer/assets"
 	"github.com/Wine1y/RandomSoundPlayer/configs"
 	"github.com/Wine1y/RandomSoundPlayer/internal"
 	"github.com/Wine1y/RandomSoundPlayer/internal/effects"
 	"github.com/faiface/beep"
 	"github.com/faiface/beep/speaker"
+	"github.com/getlantern/systray"
 )
 
 var soundCache internal.SoundCache
@@ -164,32 +166,74 @@ func main() {
 	speaker.Init(sampleRate, int(time.Second/10*time.Duration(sampleRate)/time.Second))
 	speaker.Play(&mixer)
 
-	mean, deviation := configs.Config.SoundInterval, configs.Config.SoundInterval/2.5
-	for {
-		for i := 0.00; ; i++ {
-			if rand.Float64() > math.Pow(configs.Config.MulticastBaseChance, i) {
-				break
-			}
-			pack, sound, soundStreamer := getRandomSoundStreamer(soundPacks, sampleRate)
-			var effectName string = "none"
-			var streamer beep.Streamer = soundStreamer
-			if rand.Float64() < configs.Config.EffectChance {
-				name, effect := effects.GetRandomEffect()
-				effectName = name
-				streamer = effect(soundStreamer, beep.Format{
-					SampleRate:  sampleRate,
-					NumChannels: sound.Format.NumChannels,
-					Precision:   sound.Format.Precision,
-				})
-			}
-			mixer.Add(internal.NewMasterVolumeStreamer(streamer, configs.Config.MasterVolume))
-			slog.Debug("Playing sound", "packName", pack.Name, "soundName", sound.Name, "multicast", i, "effect", effectName)
+	paused := false
+	togglePause := make(chan bool)
+	runSystray(togglePause)
 
-			multicastPause := rand.Float64()*(float64(soundStreamer.Len())/float64(sampleRate)) + 0.02
-			time.Sleep(time.Duration(float64(time.Second) * multicastPause))
+	mean, deviation := configs.Config.SoundInterval, configs.Config.SoundInterval/2.5
+	var timer *time.Timer = time.NewTimer(time.Duration((math.Min(rand.NormFloat64(), 5)*deviation + mean) * float64(time.Second)))
+	for {
+		select {
+		case <-timer.C:
+			if !paused {
+				for i := 0.00; ; i++ {
+					if rand.Float64() > math.Pow(configs.Config.MulticastBaseChance, i) {
+						break
+					}
+					pack, sound, soundStreamer := getRandomSoundStreamer(soundPacks, sampleRate)
+					var effectName string = "none"
+					var streamer beep.Streamer = soundStreamer
+					if rand.Float64() < configs.Config.EffectChance {
+						name, effect := effects.GetRandomEffect()
+						effectName = name
+						streamer = effect(soundStreamer, beep.Format{
+							SampleRate:  sampleRate,
+							NumChannels: sound.Format.NumChannels,
+							Precision:   sound.Format.Precision,
+						})
+					}
+					mixer.Add(internal.NewMasterVolumeStreamer(streamer, configs.Config.MasterVolume))
+					slog.Debug("Playing sound", "packName", pack.Name, "soundName", sound.Name, "multicast", i, "effect", effectName)
+
+					multicastPause := rand.Float64()*(float64(soundStreamer.Len())/float64(sampleRate)) + 0.02
+					time.Sleep(time.Duration(float64(time.Second) * multicastPause))
+				}
+			}
+			interval := time.Duration((math.Min(rand.NormFloat64(), 5)*deviation + mean) * float64(time.Second))
+			timer = time.NewTimer(interval)
+			slog.Debug("Next sound in", "interval", interval, "wasPaused", paused)
+		case <-togglePause:
+			paused = !paused
+			togglePause <- paused
 		}
-		interval := time.Duration((math.Min(rand.NormFloat64(), 5)*deviation + mean) * float64(time.Second))
-		slog.Debug("Next sound in", "interval", interval)
-		time.Sleep(interval)
 	}
+}
+
+func runSystray(togglePause chan bool) {
+	onSystrayRun := func() {
+		systray.SetTitle("RandomSoundPlayer")
+		systray.SetIcon(assets.TrayIconData)
+		pauseButton := systray.AddMenuItem("Pause", "")
+		go func() {
+			for {
+				<-pauseButton.ClickedCh
+				togglePause <- true
+				if <-togglePause {
+					slog.Debug("Pausing playback")
+					pauseButton.SetTitle("Resume")
+				} else {
+					slog.Debug("Resuming playback")
+					pauseButton.SetTitle("Pause")
+				}
+			}
+		}()
+
+		quitButton := systray.AddMenuItem("Quit", "")
+		go func() {
+			<-quitButton.ClickedCh
+			os.Exit(0)
+		}()
+	}
+
+	go systray.Run(onSystrayRun, func() {})
 }
