@@ -2,3 +2,5 @@
 *.wav
 *.ogg
 *.flac
+*.syso
+bin

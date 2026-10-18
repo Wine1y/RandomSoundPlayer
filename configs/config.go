@@ -40,7 +40,7 @@ func init() {
 		EffectChance:        DEFAULT_EFFECT_CHANCE,
 		SoundPacksDir:       DEFAULT_SOUND_PACKS_DIR,
 		SoundCacheSize:      DEFAULT_SOUND_CACHE_SIZE,
-		LoggingLevel:        slog.LevelInfo,
+		LoggingLevel:        slog.LevelDebug,
 	}
 	data, err := os.ReadFile(CONFIG_PATH)
 	if !os.IsNotExist(err) {

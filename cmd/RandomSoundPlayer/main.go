@@ -211,7 +211,8 @@ func main() {
 
 func runSystray(togglePause chan bool) {
 	onSystrayRun := func() {
-		systray.SetTitle("RandomSoundPlayer")
+		systray.SetTitle("RSP")
+		systray.SetTooltip("RandomSoundPlayer")
 		systray.SetIcon(assets.TrayIconData)
 		pauseButton := systray.AddMenuItem("Pause", "")
 		go func() {
