@@ -29,9 +29,14 @@ sound_cache_size = 25
 # Default: "DEBUG"
 logging_level = "DEBUG"
 
-# A list of sound pack names that won't be loaded. Use it to disable some sound packs without manually deleting or moving files.
+# A list of sound pack names that WON'T be loaded. Use it to disable some sound packs without manually deleting or moving files.
 # Default: []
 disabled_sound_packs = []
+
+# A list of sound pack names that WILL be loaded. Use it to enable some sound packs without manually deleting or moving files.
+# If enabled_sound_packs is used, disabled_sound_packs will be ignored.
+# Default: []
+enabled_sound_packs = []
 
 # Defines a weight for each sound effect. Bigger weight - more chance to use this specific effect.
 # Set weight to 0 to completely disable a sound effect.

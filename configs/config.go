@@ -16,6 +16,7 @@ type ConfigData struct {
 	SoundCacheSize      int        `toml:"sound_cache_size"`
 	LoggingLevel        slog.Level `toml:"logging_level"`
 	DisabledSoundPacks  []string   `toml:"disabled_sound_packs"`
+	EnabledSoundPacks   []string   `toml:"enabled_sound_packs"`
 	EffectWeights       map[string]struct {
 		Weight int `toml:"weight"`
 	} `toml:"effects"`

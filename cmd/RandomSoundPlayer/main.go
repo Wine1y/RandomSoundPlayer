@@ -1,7 +1,9 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"math/rand/v2"
@@ -23,9 +25,34 @@ import (
 
 var soundCache internal.SoundCache
 
+func IsStdoutAvailable() bool {
+	stat, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (stat.Mode()&(os.ModeCharDevice|os.ModeNamedPipe|os.ModeIrregular)) != 0 || stat.Size() >= 0
+}
+
 func init() {
+	logToFile := flag.Bool("log", false, "Enable to save logs into the file")
+	flag.Parse()
+
+	var fileWriter io.Writer = io.Discard
+	if *logToFile {
+		logFile, err := os.OpenFile("logs.log", os.O_CREATE|os.O_TRUNC|os.O_APPEND, 0666)
+		if err != nil {
+			panic(err)
+		}
+		fileWriter = logFile
+	}
+
+	var stdoutWriter io.Writer = io.Discard
+	if IsStdoutAvailable() {
+		stdoutWriter = os.Stdout
+	}
+
 	slog.SetDefault(slog.New(slog.NewTextHandler(
-		os.Stdout,
+		io.MultiWriter(fileWriter, stdoutWriter),
 		&slog.HandlerOptions{Level: configs.Config.LoggingLevel},
 	)))
 	slog.Debug("Config initialized", "config", configs.Config)
@@ -45,8 +72,14 @@ func loadSoundPacks() ([]internal.SoundPack, error) {
 			continue
 		}
 		packName := packEntry.Name()
-		if slices.Contains(configs.Config.DisabledSoundPacks, packName) {
-			continue
+		if len(configs.Config.EnabledSoundPacks) == 0 {
+			if slices.Contains(configs.Config.DisabledSoundPacks, packName) {
+				continue
+			}
+		} else {
+			if !slices.Contains(configs.Config.EnabledSoundPacks, packName) {
+				continue
+			}
 		}
 		packPath := filepath.Join(configs.Config.SoundPacksDir, packName)
 		soundPack, err := internal.LoadSoundPackAt(packPath)
@@ -168,10 +201,12 @@ func main() {
 
 	paused := false
 	togglePause := make(chan bool)
-	runSystray(togglePause)
+	runSystray(togglePause, len(soundPacks), totalSounds)
 
 	mean, deviation := configs.Config.SoundInterval, configs.Config.SoundInterval/2.5
-	var timer *time.Timer = time.NewTimer(time.Duration((math.Min(rand.NormFloat64(), 5)*deviation + mean) * float64(time.Second)))
+	interval := time.Duration((math.Min(rand.NormFloat64(), 5)*deviation + mean) * float64(time.Second))
+	var timer *time.Timer = time.NewTimer(interval)
+	slog.Debug("First sound in", "interval", interval)
 	for {
 		select {
 		case <-timer.C:
@@ -209,10 +244,10 @@ func main() {
 	}
 }
 
-func runSystray(togglePause chan bool) {
+func runSystray(togglePause chan bool, totalPacks int, totalSounds int) {
 	onSystrayRun := func() {
 		systray.SetTitle("RSP")
-		systray.SetTooltip("RandomSoundPlayer")
+		systray.SetTooltip(fmt.Sprintf("RandomSoundPlayer [%v packs, %v sounds]", totalPacks, totalSounds))
 		systray.SetIcon(assets.TrayIconData)
 		pauseButton := systray.AddMenuItem("Pause", "")
 		go func() {
