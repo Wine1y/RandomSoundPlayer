@@ -37,38 +37,34 @@ func DecodeFLAC(file *os.File) (beep.StreamSeekCloser, beep.Format, error) {
 	return flac.Decode(file)
 }
 
-type UnsupportedFiletypeError struct {
-	filePath string
-}
-
-func (err UnsupportedFiletypeError) Error() string {
-	return fmt.Sprintf(
-		"File \"%v\" has unsupported filetype \"%v\". Please use one of the supported filetypes: %v",
-		err.filePath, filepath.Ext(err.filePath), supported_filetypes,
-	)
-}
-
-type Sound struct {
-	Name     string
-	Streamer beep.StreamSeekCloser
-	Format   beep.Format
-}
+type Sound string
 
 func LoadSoundAt(soundPath string) (Sound, error) {
 	if !slices.Contains(supported_filetypes, filepath.Ext(soundPath)) {
-		return Sound{}, UnsupportedFiletypeError{filePath: soundPath}
+		return "", fmt.Errorf(
+			"File \"%v\" has unsupported filetype \"%v\". Please use one of the supported filetypes: %v",
+			soundPath, filepath.Ext(soundPath), supported_filetypes,
+		)
 	}
-	fileExtension := filepath.Ext(soundPath)
+	return Sound(soundPath), nil
+}
 
-	soundFile, err := os.Open(soundPath)
+func (sound Sound) Name() string {
+	return filepath.Base(string(sound))
+}
+
+func (sound Sound) Decode() (beep.StreamSeekCloser, beep.Format, error) {
+	fileExtension := filepath.Ext(string(sound))
+
+	soundFile, err := os.Open(string(sound))
 	if err != nil {
-		return Sound{}, err
+		return nil, beep.Format{}, err
 	}
 
 	streamer, format, err := decoders[fileExtension](soundFile)
 	if err != nil {
-		return Sound{}, err
+		return nil, beep.Format{}, err
 	}
 
-	return Sound{Name: filepath.Base(soundPath), Format: format, Streamer: streamer}, nil
+	return streamer, format, nil
 }

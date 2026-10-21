@@ -2,7 +2,6 @@ package internal
 
 import (
 	"container/list"
-	"fmt"
 
 	"github.com/faiface/beep"
 )
@@ -16,6 +15,7 @@ type SoundCache struct {
 type soundEntry struct {
 	key         string
 	soundBuffer *beep.Buffer
+	soundFormat *beep.Format
 }
 
 func NewSoundCache(capacity int) *SoundCache {
@@ -26,24 +26,25 @@ func NewSoundCache(capacity int) *SoundCache {
 	}
 }
 
-func (c *SoundCache) Get(soundPackName string, soundName string) (*beep.Buffer, bool) {
-	key := fmt.Sprintf("%v_%v", soundPackName, soundName)
-	if el, ok := c.items[key]; ok {
+func (c *SoundCache) Get(soundPath string) (*beep.Buffer, *beep.Format, bool) {
+	if el, ok := c.items[soundPath]; ok {
 		c.order.MoveToFront(el)
-		return el.Value.(*soundEntry).soundBuffer, true
+		entry := el.Value.(*soundEntry)
+		return entry.soundBuffer, entry.soundFormat, true
 	}
-	return nil, false
+	return nil, nil, false
 }
 
-func (c *SoundCache) Put(soundPackName string, soundName string, s *beep.Buffer) {
-	key := fmt.Sprintf("%v_%v", soundPackName, soundName)
-	if el, ok := c.items[key]; ok {
+func (c *SoundCache) Put(soundPath string, buffer *beep.Buffer, format *beep.Format) {
+	if el, ok := c.items[soundPath]; ok {
 		c.order.MoveToFront(el)
-		el.Value.(*soundEntry).soundBuffer = s
+		entry := el.Value.(*soundEntry)
+		entry.soundBuffer = buffer
+		entry.soundFormat = format
 		return
 	}
-	el := c.order.PushFront(&soundEntry{key, s})
-	c.items[key] = el
+	el := c.order.PushFront(&soundEntry{soundPath, buffer, format})
+	c.items[soundPath] = el
 
 	if c.order.Len() > c.capacity {
 		oldest := c.order.Back()

@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -22,6 +21,8 @@ import (
 	"github.com/faiface/beep/speaker"
 	"github.com/getlantern/systray"
 )
+
+const SAMPLE_RATE = beep.SampleRate(44100)
 
 var soundCache internal.SoundCache
 
@@ -96,78 +97,49 @@ func loadSoundPacks() ([]internal.SoundPack, error) {
 	return soundPacks, nil
 }
 
-func getSampleRate(soundPacks []internal.SoundPack) beep.SampleRate {
-	sampleRates := make(map[beep.SampleRate]int, 8)
-	for i := range soundPacks {
-		for j := range soundPacks[i].Sounds {
-			sampleRate := soundPacks[i].Sounds[j].Format.SampleRate
-
-			_, exists := sampleRates[sampleRate]
-			if exists {
-				sampleRates[sampleRate]++
-			} else {
-				sampleRates[sampleRate] = 1
-			}
-		}
-	}
-	if len(sampleRates) == 0 {
-		panic("Unreachable, at least one sound should be loaded by now")
-	}
-
-	ratesList := make([]struct {
-		sampleRate beep.SampleRate
-		count      int
-	}, 0, len(sampleRates))
-	for sampleRate, count := range sampleRates {
-		ratesList = append(ratesList, struct {
-			sampleRate beep.SampleRate
-			count      int
-		}{sampleRate, count})
-	}
-	sort.Slice(ratesList, func(i, j int) bool {
-		return ratesList[i].count > ratesList[j].count
-	})
-
-	var maxCountRates = 0
-	for i := range ratesList {
-		if ratesList[i].count == ratesList[0].count {
-			maxCountRates++
-		}
-	}
-
-	mostCommonRates := ratesList[:maxCountRates]
-	sort.Slice(mostCommonRates, func(i, j int) bool {
-		return mostCommonRates[i].sampleRate > mostCommonRates[j].sampleRate
-	})
-
-	sRate, sRateCount := mostCommonRates[len(mostCommonRates)/2].sampleRate, mostCommonRates[len(mostCommonRates)/2].count
-	slog.Info("Using median most common sample rate", "sampleRate", sRate, "soundsInIt", sRateCount)
-	return sRate
-}
-
 func getRandomSoundStreamer(
 	soundPacks []internal.SoundPack,
-	sampleRate beep.SampleRate,
-) (*internal.SoundPack, *internal.Sound, beep.StreamSeeker) {
-	pack := &soundPacks[rand.IntN(len(soundPacks))]
-	sound := &pack.Sounds[rand.IntN(len(pack.Sounds))]
+	totalSounds int,
+) (*internal.SoundPack, *internal.Sound, beep.StreamSeeker, beep.Format) {
+	var (
+		pack  *internal.SoundPack
+		sound *internal.Sound
+	)
+	soundI := rand.IntN(totalSounds)
+	minSoundI := 0
 
-	buffer, cached := soundCache.Get(pack.Name, sound.Name)
-	if !cached {
-		buffer = beep.NewBuffer(beep.Format{
-			SampleRate:  sampleRate,
-			NumChannels: sound.Format.NumChannels,
-			Precision:   sound.Format.Precision,
-		})
-		if sound.Format.SampleRate == sampleRate {
-			buffer.Append(sound.Streamer)
-		} else {
-			buffer.Append(beep.Resample(4, sound.Format.SampleRate, sampleRate, sound.Streamer))
+	for i := range soundPacks {
+		if soundI < minSoundI+len(soundPacks[i].Sounds) {
+			pack = &soundPacks[i]
+			sound = &soundPacks[i].Sounds[soundI-minSoundI]
+			break
 		}
-		sound.Streamer.Seek(0)
-		soundCache.Put(pack.Name, sound.Name, buffer)
+		minSoundI += len(soundPacks[i].Sounds)
 	}
-	return pack, sound, buffer.Streamer(0, buffer.Len())
+
+	buffer, format, cached := soundCache.Get(string(*sound))
+	if !cached {
+		streamer, soundFormat, err := sound.Decode()
+		if err != nil {
+			slog.Warn("Error while decoding sound", "soundPath", string(*sound))
+			return getRandomSoundStreamer(soundPacks, totalSounds)
+		}
+		format = &beep.Format{
+			SampleRate:  SAMPLE_RATE,
+			NumChannels: soundFormat.NumChannels,
+			Precision:   soundFormat.Precision,
+		}
+
+		buffer = beep.NewBuffer(*format)
+		if soundFormat.SampleRate == SAMPLE_RATE {
+			buffer.Append(streamer)
+		} else {
+			buffer.Append(beep.Resample(4, soundFormat.SampleRate, SAMPLE_RATE, streamer))
+		}
+		streamer.Close()
+		soundCache.Put(string(*sound), buffer, format)
+	}
+	return pack, sound, buffer.Streamer(0, buffer.Len()), *format
 }
 
 func main() {
@@ -193,10 +165,8 @@ func main() {
 		"packs", fmt.Sprintf("[%v]", strings.Join(packStrings, ", ")),
 	)
 
-	sampleRate := getSampleRate(soundPacks)
-
 	mixer := beep.Mixer{}
-	speaker.Init(sampleRate, int(time.Second/10*time.Duration(sampleRate)/time.Second))
+	speaker.Init(SAMPLE_RATE, int(time.Second/10*time.Duration(SAMPLE_RATE)/time.Second))
 	speaker.Play(&mixer)
 
 	paused := false
@@ -215,22 +185,18 @@ func main() {
 					if rand.Float64() > math.Pow(configs.Config.MulticastBaseChance, i) {
 						break
 					}
-					pack, sound, soundStreamer := getRandomSoundStreamer(soundPacks, sampleRate)
+					pack, sound, soundStreamer, format := getRandomSoundStreamer(soundPacks, totalSounds)
 					var effectName string = "none"
 					var streamer beep.Streamer = soundStreamer
 					if rand.Float64() < configs.Config.EffectChance {
 						name, effect := effects.GetRandomEffect()
 						effectName = name
-						streamer = effect(soundStreamer, beep.Format{
-							SampleRate:  sampleRate,
-							NumChannels: sound.Format.NumChannels,
-							Precision:   sound.Format.Precision,
-						})
+						streamer = effect(soundStreamer, format)
 					}
 					mixer.Add(internal.NewMasterVolumeStreamer(streamer, configs.Config.MasterVolume))
-					slog.Debug("Playing sound", "packName", pack.Name, "soundName", sound.Name, "multicast", i, "effect", effectName)
+					slog.Debug("Playing sound", "packName", pack.Name, "soundName", sound.Name(), "multicast", i, "effect", effectName)
 
-					multicastPause := rand.Float64()*(float64(soundStreamer.Len())/float64(sampleRate)) + 0.02
+					multicastPause := rand.Float64()*(float64(soundStreamer.Len())/float64(SAMPLE_RATE)) + 0.02
 					time.Sleep(time.Duration(float64(time.Second) * multicastPause))
 				}
 			}

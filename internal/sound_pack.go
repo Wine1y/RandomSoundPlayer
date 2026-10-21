@@ -12,21 +12,13 @@ type SoundPack struct {
 	Sounds []Sound
 }
 
-type PackPathIsNotDirError struct {
-	packPath string
-}
-
-func (err PackPathIsNotDirError) Error() string {
-	return fmt.Sprintf("Invalid path to sound pack, sound pack path should point to directory, got \"%v\"", err.packPath)
-}
-
 func LoadSoundPackAt(packPath string) (SoundPack, error) {
 	stat, err := os.Stat(packPath)
 	if err != nil {
 		return SoundPack{}, err
 	}
 	if !stat.IsDir() {
-		return SoundPack{}, PackPathIsNotDirError{packPath: packPath}
+		return SoundPack{}, fmt.Errorf("Invalid path to sound pack, sound pack path should point to directory, got \"%v\"", packPath)
 	}
 
 	entries, err := os.ReadDir(packPath)
